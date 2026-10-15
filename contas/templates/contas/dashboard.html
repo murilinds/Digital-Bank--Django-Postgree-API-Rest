@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <title>Dashboard - ByteBank</title>
+    <style>
+        body { font-family: Arial, sans-serif; background: #f4f7f6; margin: 0; padding: 20px; }
+        .container { max-width: 900px; margin: auto; background: white; padding: 30px; border-radius: 10px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
+        h2, h3 { color: #2c3e50; }
+        .card-saldo { background: #27ae60; color: white; padding: 20px; border-radius: 8px; font-size: 22px; margin-bottom: 20px; }
+        .acoes-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; margin-bottom: 30px; }
+        .acao-box { background: #f8f9fa; padding: 15px; border-radius: 8px; border: 1px solid #ddd; }
+        .acao-box h4 { margin-top: 0; color: #34495e; }
+        input, select { width: 100%; padding: 8px; margin-bottom: 10px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; }
+        button { width: 100%; padding: 10px; background: #3498db; color: white; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; }
+        button:hover { background: #2980b9; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        th, td { padding: 10px; text-align: left; border-bottom: 1px solid #ddd; font-size: 14px; }
+        th { background-color: #f1f1f1; }
+        .voltar { display: inline-block; margin-top: 20px; text-decoration: none; color: #e74c3c; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>Painel da Conta Bancária</h2>
+        
+        <div class="card-saldo">
+            Titular: <span id="nome-usuario">A carregar...</span><br>
+            Saldo Atual: <span id="saldo-atual">R$ 0,00</span>
+        </div>
+
+        <h3>Realizar Operações</h3>
+        <div class="acoes-grid">
+            <div class="acao-box">
+                <h4>Depositar</h4>
+                <input type="number" id="valorDeposito" placeholder="Valor (R$)" step="0.01">
+                <button onclick="realizarTransacao('DEPOSITO')">Confirmar Depósito</button>
+            </div>
+            <div class="acao-box">
+                <h4>Sacar</h4>
+                <input type="number" id="valorSaque" placeholder="Valor (R$)" step="0.01">
+                <button onclick="realizarTransacao('SAQUE')">Confirmar Saque</button>
+            </div>
+            <div class="acao-box">
+                <h4>Transferir</h4>
+                <input type="number" id="valorTransferencia" placeholder="Valor (R$)" step="0.01">
+                <select id="contaDestino">
+                    <option value="">Selecione a conta destino</option>
+                </select>
+                <button onclick="realizarTransacao('TRANSFERENCIA')">Fazer Transferência</button>
+            </div>
+        </div>
+
+        <h3>Extrato / Transações Recentes</h3>
+        <table>
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Tipo</th>
+                    <th>Valor</th>
+                    <th>Data</th>
+                </tr>
+            </thead>
+            <tbody id="tabela-transacoes">
+                <tr><td colspan="4" style="text-align:center;">A carregar extrato...</td></tr>
+            </tbody>
+        </table>
+
+        <a href="/login/" onclick="localStorage.clear()" class="voltar">← Terminar Sessão / Voltar</a>
+    </div>
+
+    <script>
+        const minhaContaId = localStorage.getItem('contaIdAtiva');
+        
+        if (!minhaContaId) {
+            alert('Nenhuma sessão ativa encontrada. Faça login.');
+            window.location.href = '/login/';
+        }
+
+        function getCookie(name) {
+            let cookieValue = null;
+            if (document.cookie && document.cookie !== '') {
+                const cookies = document.cookie.split(';');
+                for (let i = 0; i < cookies.length; i++) {
+                    const cookie = cookies[i].trim();
+                    if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                        cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                        break;
+                    }
+                }
+            }
+            return cookieValue;
+        }
+
+        async function carregarDadosBanco() {
+            try {
+                // 1. Carrega os dados da conta ativa
+                const respostaConta = await fetch(`/contas/api/contas/${minhaContaId}/`);
+                if (!respostaConta.ok) {
+                    throw new Error("A conta ativa não foi encontrada na base de dados.");
+                }
+                const conta = await respostaConta.json();
+
+                document.getElementById('nome-usuario').innerText = conta.usuario_nome;
+                document.getElementById('saldo-atual').innerText = `R$ ${conta.saldo}`;
+
+                // 2. Carrega a lista de contas para o select de transferência
+                const respostaTodasContas = await fetch('/contas/api/contas/');
+                const listaContas = await respostaTodasContas.json();
+                const selectDestino = document.getElementById('contaDestino');
+                selectDestino.innerHTML = '<option value="">Selecione a conta destino</option>';
+                
+                listaContas.forEach(c => {
+                    if (c.id !== parseInt(minhaContaId)) {
+                        selectDestino.innerHTML += `<option value="${c.id}">Conta #${c.id} - ${c.usuario_nome}</option>`;
+                    }
+                });
+
+                // 3. Carrega o extrato de transações
+                const respostaTrans = await fetch('/contas/api/transacoes/');
+                const transacoes = await respostaTrans.json();
+                const tbody = document.getElementById('tabela-transacoes');
+                tbody.innerHTML = '';
+
+                const minhasTransacoes = transacoes.filter(t => t.conta_origem === parseInt(minhaContaId) || t.conta_destino === parseInt(minhaContaId));
+
+                if (minhasTransacoes.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;">Nenhuma transação registada.</td></tr>';
+                    return;
+                }
+
+                minhasTransacoes.forEach(t => {
+                    tbody.innerHTML += `
+                        <tr>
+                            <td>#${t.id}</td>
+                            <td><b>${t.tipo}</b></td>
+                            <td>R$ ${t.valor}</td>
+                            <td>${new Date(t.data_transacao).toLocaleString('pt-BR')}</td>
+                        </tr>
+                    `;
+                });
+
+            } catch (erro) {
+                console.error("Erro detalhado:", erro);
+                alert("Erro ao carregar os dados da conta. Verifique se fez login corretamente.");
+                localStorage.clear();
+                window.location.href = '/login/';
+            }
+        }
+
+        async function realizarTransacao(tipo) {
+            let valor = 0;
+            let contaDestino = null;
+
+            if (tipo === 'DEPOSITO') {
+                valor = document.getElementById('valorDeposito').value;
+            } else if (tipo === 'SAQUE') {
+                valor = document.getElementById('valorSaque').value;
+            } else if (tipo === 'TRANSFERENCIA') {
+                valor = document.getElementById('valorTransferencia').value;
+                contaDestino = document.getElementById('contaDestino').value;
+                if (!contaDestino) {
+                    alert('Selecione uma conta de destino válida.');
+                    return;
+                }
+            }
+
+            if (!valor || valor <= 0) {
+                alert('Insira um valor válido.');
+                return;
+            }
+
+            const dadosEnvio = {
+                conta_origem: parseInt(minhaContaId),
+                conta_destino: contaDestino ? parseInt(contaDestino) : null,
+                valor: parseFloat(valor),
+                tipo: tipo
+            };
+
+            const csrftoken = getCookie('csrftoken');
+
+            try {
+                const resposta = await fetch('/contas/api/transacoes/', {
+                    method: 'POST',
+                    headers: { 
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': csrftoken
+                    },
+                    body: JSON.stringify(dadosEnvio)
+                });
+
+                const resultado = await resposta.json();
+
+                if (resposta.ok) {
+                    alert('Operação realizada com sucesso!');
+                    window.location.reload();
+                } else {
+                    alert('Erro: ' + (resultado.erro || JSON.stringify(resultado)));
+                }
+            } catch (erro) {
+                console.error(erro);
+                alert('Erro de comunicação com a API.');
+            }
+        }
+
+        carregarDadosBanco();
+    </script>
+</body>
+</html>

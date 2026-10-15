@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <title>Acesso - ByteBank</title>
+    <style>
+        body { font-family: Arial, sans-serif; background: #f4f7f6; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+        .auth-card { background: white; padding: 30px; border-radius: 10px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); width: 320px; text-align: center; }
+        h2 { color: #2c3e50; margin-bottom: 20px; }
+        .input-group { margin-bottom: 15px; text-align: left; }
+        label { display: block; margin-bottom: 5px; color: #34495e; font-size: 14px; }
+        input { width: 100%; padding: 10px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 5px; }
+        .btn { width: 100%; padding: 10px; background: #3498db; color: white; border: none; border-radius: 5px; font-weight: bold; cursor: pointer; margin-top: 10px; }
+        .btn:hover { background: #2980b9; }
+        .btn-toggle { background: none; border: none; color: #3498db; margin-top: 20px; cursor: pointer; text-decoration: underline; font-size: 14px; }
+        .erro { color: #e74c3c; font-size: 13px; margin-bottom: 10px; display: none; }
+    </style>
+</head>
+<body>
+    <div class="auth-card">
+        <h2 id="titulo-form">Entrar na Conta</h2>
+        <div id="mensagem-erro" class="erro"></div>
+
+        <form id="authForm">
+            <div class="input-group">
+                <label>Utilizador:</label>
+                <input type="text" id="username" required>
+            </div>
+            <div class="input-group">
+                <label>Palavra-passe:</label>
+                <input type="password" id="password" required>
+            </div>
+            <button type="submit" id="btnAcao" class="btn">Entrar</button>
+        </form>
+
+        <!-- Botão fora do formulário para garantir que o clique funciona sempre -->
+        <button type="button" class="btn-toggle" id="btnToggle" onclick="alternarModo()">Não tem conta? Criar nova conta</button>
+    </div>
+
+    <script>
+        let ehModoRegistro = false;
+
+        function alternarModo() {
+            ehModoRegistro = !ehModoRegistro;
+            const titulo = document.getElementById('titulo-form');
+            const btnAcao = document.getElementById('btnAcao');
+            const btnToggle = document.getElementById('btnToggle');
+            const erroDiv = document.getElementById('mensagem-erro');
+
+            if (ehModoRegistro) {
+                titulo.innerText = 'Criar Nova Conta';
+                btnAcao.innerText = 'Registar e Entrar';
+                btnToggle.innerText = 'Já tem conta? Fazer login';
+            } else {
+                titulo.innerText = 'Entrar na Conta';
+                btnAcao.innerText = 'Entrar';
+                btnToggle.innerText = 'Não tem conta? Criar nova conta';
+            }
+            erroDiv.style.display = 'none';
+        }
+
+        function getCookie(name) {
+            let cookieValue = null;
+            if (document.cookie && document.cookie !== '') {
+                const cookies = document.cookie.split(';');
+                for (let i = 0; i < cookies.length; i++) {
+                    const cookie = cookies[i].trim();
+                    if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                        cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                        break;
+                    }
+                }
+            }
+            return cookieValue;
+        }
+
+        document.getElementById('authForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+            const erroDiv = document.getElementById('mensagem-erro');
+            erroDiv.style.display = 'none';
+            const csrftoken = getCookie('csrftoken');
+
+            if (ehModoRegistro) {
+                try {
+                    const resposta = await fetch('/contas/api/registrar/', {
+                        method: 'POST',
+                        headers: { 
+                            'Content-Type': 'application/json',
+                            'X-CSRFToken': csrftoken
+                        },
+                        body: JSON.stringify({ username, password })
+                    });
+                    const dados = await resposta.json();
+
+                    if (resposta.ok) {
+                        alert('Conta criada com sucesso! Redirecionando...');
+                        localStorage.setItem('contaIdAtiva', dados.conta_id);
+                        window.location.href = '/contas/dashboard/';
+                    } else {
+                        erroDiv.innerText = dados.erro || 'Erro ao registar.';
+                        erroDiv.style.display = 'block';
+                    }
+                } catch (err) {
+                    erroDiv.innerText = 'Erro de conexão com o servidor.';
+                    erroDiv.style.display = 'block';
+                }
+            } else {
+                try {
+                    const resposta = await fetch('/contas/api/contas/');
+                    const contas = await resposta.json();
+                    
+                    const contaEncontrada = contas.find(c => c.usuario_nome === username);
+
+                    if (contaEncontrada) {
+                        localStorage.setItem('contaIdAtiva', contaEncontrada.id);
+                        window.location.href = '/contas/dashboard/';
+                    } else {
+                        erroDiv.innerText = 'Utilizador não encontrado. Verifique o nome ou crie uma conta.';
+                        erroDiv.style.display = 'block';
+                    }
+                } catch (err) {
+                    erroDiv.innerText = 'Erro ao consultar contas.';
+                    erroDiv.style.display = 'block';
+                }
+            }
+        });
+    </script>
+</body>
+</html>
